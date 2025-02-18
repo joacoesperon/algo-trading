@@ -1,3 +1,6 @@
+from dontshareconfig import key  
+#key = 'klhjklhjklhjklhjk' -- this is whats in the dontshareconfig.py (private key, keep safe af)
+
 from eth_account.signers.local import LocalAccount
 import eth_account
 import json
@@ -26,12 +29,174 @@ rounding = 4
 
 cb_symbol = symbol + '/USDT' # ver para bybit
 
+def get_sz_px_decimals(symbol):
+
+    '''
+    this is succesfully returns Size decimals and Price decimals
+
+    this outputs the size decimals for a given symbol
+    which is - the SIZE you can buy or sell at
+    ex. if sz decimal == 1 then you can buy/sell 1.4
+    if sz decimal == 2 then you can buy/sell 1.45
+    if sz decimal == 3 then you can buy/sell 1.456
+
+    if size isnt right, we get this error. to avoid it use the sz decimal func
+    {'error': 'Invalid order size'}
+    '''
+    url = 'https://api.hyperliquid.xyz/info'
+    headers = {'Content-Type': 'application/json'}
+    data = {'type': 'meta'}
+
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+
+    if response.status_code == 200:
+        # Success
+        data = response.json()
+        #print(data)
+        symbols = data['universe']
+        symbol_info = next((s for s in symbols if s['name'] == symbol), None)
+        if symbol_info:
+            sz_decimals = symbol_info['szDecimals']
+            
+        else:
+            print('Symbol not found')
+    else:
+        # Error
+        print('Error:', response.status_code)
+
+    ask = ask_bid(symbol)[0]
+    #print(f'this is the ask {ask}')
+
+    # Compute the number of decimal points in the ask price
+    ask_str = str(ask)
+    if '.' in ask_str:
+        px_decimals = len(ask_str.split('.')[1])
+    else:
+        px_decimals = 0
+
+    print(f'{symbol} this is the price {sz_decimals} decimal(s)')
+
+    return sz_decimals, px_decimals
+
+def limit_order(coin, is_buy, sz, limit_px, reduce_only, account):
+    
+    #account: LocalAccount = eth_account.Account.from_key(key)
+    exchange = Exchange(account, constants.MAINNET_API_URL)
+    # info = Info(constants.MAINNET_API_URL, ski_ws=True)
+    # user_state = info.user_state(account.address)
+    # print(f'this is current account value: {user_state['marginSummary']['accountValue']}') 
+
+    rounding = get_sz_px_decimals(coin)[0]
+    sz = round(sz, rounding)
+    print(f'coin: {coin}, type: {type(coin)}')
+    print(f'is_buy: {is_buy}, type: {type(is_buy)}')
+    print(f'sz: {sz}, type: {type(sz)}')
+    print(f'limit_px: {limit_px}, type: {type(limit_px)}')
+    print(f'reduce_only: {reduce_only}, type: {type(reduce_only)}')
+
+
+    #limit_px = str(limit_px)
+    # sz = str(sz)
+    # print(f'limit_px: {limit_px}, type: {type(limit_px)}')
+    # print(f'sz: {sz}, type: {type(sz)}')
+    print(f'placing limit order for {coin} {sz} @ {limit_px}')
+    order_result = exchange.order(coin,is_buy, sz, limit_px, {"limit:": {"tif": "Gtc"}}, reduce_only=reduce_only)
+
+    if is_buy == True:
+        print(f'limit BUY order placed thanks joaco, resting: {order_result['response']['data']['statuses']}')
+    else:
+        print(f'limit SELL order placed thanks joaco, resting: {order_result['response']['data']['statuses']}')
+
+    return order_result
+
+def adjust_leverage_size_signal(symbol, level, account):
+    
+    """
+    this calculates size based off what we want
+    95% of balance
+    """
+
+    print('leverage:',leverage)
+
+    #account: LocalAccount = eth_account.Account.from_key(key)
+    exchange = Exchange(account, constants.MAINNET_API_URL)
+    info = Info(constants.MAINNET_API_URL, ski_ws=True)
+    
+    #get the user state and print out leverage information for ETH
+    user_state = info.user_state(account.address)
+    acct_value = user_state['marginSummary']['accountValue']
+    acct_value = float(acct_value)
+    #print(acct_value)
+    acct_val95 = acct_value * .95
+
+    print(exchange.update_leverage(leverage, symbol))
+
+    price = ask_bid(symbol)[0]
+
+    # size == balance / price * leverage
+    # INJ 6.95 ... at 10x lev... 10 INJ == $cost 6.95
+    size = (acct_val95 / price) * leverage
+    size = float(size)
+    rounding = get_sz_px_decimals(symbol)[0]
+    size = round(size, rounding)
+    # print(f'this is the size we can use 95% fo acct val {size}')
+
+    user_state = info.user_state(account.address)
+
+    return leverage,size
+
+def adjust_leverage(symbol, leverage):
+    account= LocalAccount = eth_account.Account.from_key(key)
+    exchange = Exchange(account, constants.MAINNET_API_URL)
+    info = Info(constants.MAINNET_API_URL, ski_ws=True)
+
+    print('leverage', leverage)
+
+    exchange.update_leverage(leverage, symbol)
+
+def get_ohlcv(cb_symbol, timeframe, limit):
+
+    coinbase  = ccxt.kraken()
+
+    ohlcv = coinbase.fetch_ohlcv(cb_symbol, timeframe, limit)
+    #print(ohlcv)
+
+    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'],unit='ms')
+
+    df = df.tail(limit)
+
+    df['support'] = df[:-2]['close'].min()
+    df['resis'] = df[:-2]['close'].max()
+
+    # save the dataframe to a CSV file 
+    df.to_csv('ohlcv_data.csv', index=False)
+
+    return df
+
 def get_ohlcv2(symbol, interval, lookback_days):
     end_time = datetime.now()
     start_time = end_time - timedelta(days=lookback_days)
 
-    url = ''
+    url = 'https://api.hyperliquid.xyz/info'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        'type': 'candleSnapshot',
+        'req': {
+            "coin": symbol,
+            'interval': interval,
+            'startTime': int(start_time.timestamp() * 1000),
+            'endTime': int(end_time.timestamp() * 1000)
+        }
+    }
 
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        snapshot_data = response.json()
+        return snapshot_data
+    else:
+        print(f'error fetching data for {symbol}: {response.status_code}')
+        return None
 
 def process_data_to_df(snapshot_data):
     if snapshot_data:
@@ -61,11 +226,47 @@ def process_data_to_df(snapshot_data):
     else:
         return pd.DataFrame() # return empty dataframe if no data is fetched    
 
+def calculate_vwap_with_symbol(symbol):
+    # Fetch and process data
+    snapshot_data = get_ohlcv2(symbol, '15m', 300)
+    df = process_data_to_df(snapshot_data)
+
+    # Convert the 'timestamp' column to datetime and set it as the index 
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df.set_index('timestamp', inplace=True)
+
+    # Ensure all columns used for VWAP calculation are of numeric type
+    numeric_columns = ['high', 'low', 'close', 'volume']
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(df[column], errors = 'coerce') # coerce will set errors to NaN
+
+    # drop rows with NaN created dring type conversion(if any)
+    df.dropna(subset=numeric_columns, inplace=True)
+
+    # ensure the DataFrame is ordered by datetime
+    df.sort_index(inplace=True)
+
+    # calculate VWAP and add it as a new column
+    df['VWAP'] = ta.vwap(high=df['high'], low=df['low'], close=df['close'], volume=df['volume'])
+
+    # retieve the latest VWAP value from the DataFrame
+    latest_vwap = df['VWAP'].iloc[-1]
+
+    return df, latest_vwap 
+
 def supply_demand_zones_hl(symbo, timeframe, limit):
 
     print('starting joacos supply and demand zone calculations...')
 
-    sd_df
+    sd_df = pd.DataFrame()
+
+    snapshot_data = get_ohlcv2(symbol, timeframe, limit)
+    df = process_data_to_df(snapshot_data)
+
+
+    supp = df.iloc[-1]['support']
+    resis = df.iloc[-1]['resis']
+    #print(f'this is joacos support for 1h {supp_1h} this is resis: {resis_1h}')
 
     df['supp_lo'] = df[:-2]['low'].min()
     supp_lo = df.iloc[-1]['supp_lo']
