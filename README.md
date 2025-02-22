@@ -12,3 +12,5 @@
 
     para instalar todas las dependencias: pip install -r requirements.txt
     para desisntalar todas las dependencias: pip uninstall -r requirements.txt -y
+
+    para ver los datos descargados el tradingview es bybit, perpetual contracts y zona horaria utc (londres)

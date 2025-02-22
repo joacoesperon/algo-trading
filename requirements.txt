@@ -5,3 +5,4 @@ pandas
 schedule
 #pandas_ta # mejor instalarlo desde github para compatibilidad con numpy
 git+https://github.com/twopirllc/pandas-ta.git
+backtesting
