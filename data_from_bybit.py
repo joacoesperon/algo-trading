@@ -99,6 +99,6 @@ if __name__ == "__main__":
         print("📊 Datos de 1 hora guardados")
 
     # Obtener datos de 5M para rupturas
-    df_5m = get_ohlcv(symbol, "5", days=300)
+    df_5m = get_ohlcv(symbol, "15", days=300)
     if df_5m is not None:
-        print("📊 Datos de 5 minutos guardados")
+        print("📊 Datos de 15 minutos guardados")
