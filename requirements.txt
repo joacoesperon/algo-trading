@@ -1,8 +1,11 @@
-requests
-eth_account
-ccxt
-pandas
-schedule
-#pandas_ta # mejor instalarlo desde github para compatibilidad con numpy
-git+https://github.com/twopirllc/pandas-ta.git
-backtesting
+requests==2.32.3
+eth_account==0.13.4
+ccxt==4.3.98
+pandas==2.2.3
+schedule==1.2.2
+pandas-ta==0.3.14b0
+backtesting==0.3.3
+numpy==1.26.4
+# TA-Lib requiere instalación previa de la biblioteca C en Ubuntu
+# Sigue las instrucciones en el comentario abajo para instalar TA-Lib
+ta-lib==0.4.32

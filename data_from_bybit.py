@@ -9,26 +9,26 @@ BATCH_SIZE = 1000  # Máximo de Bybit por request
 MAX_RETRIES = 3
 API_URL = "https://api.bybit.com/v5/market/kline"
 
-def get_ohlcv(symbol: str, interval: str, days: int = 300):
+def get_ohlcv(symbol: str, interval: str):
     """
-    Descarga datos OHLCV desde la API de Bybit en rangos de tiempo definidos.
+    Descarga todos los datos OHLCV disponibles desde la API de Bybit.
     
     :param symbol: Par de trading (ejemplo: 'BTCUSDT')
-    :param interval: Timeframe ('60' para 1 hora, '5' para 5 minutos, etc.)
-    :param days: Cantidad de días de historial a descargar.
+    :param interval: Timeframe ('60' para 1 hora)
     :return: DataFrame con los datos OHLCV
     """
     end_time = datetime.now(UTC)
-    start_time = end_time - timedelta(days=days)
+    start_time = end_time  # Empezamos desde el presente y retrocedemos
+    earliest_time = datetime(2018, 1, 1, tzinfo=UTC)  # Fecha inicial aproximada
 
     all_data = []
     
     print(f"\n📡 Descargando datos de {symbol} en timeframe {interval}")
-    print(f"🕒 Desde {start_time} hasta {end_time}")
+    print(f"🕒 Desde el inicio (~2021) hasta {end_time}")
 
-    while start_time < end_time:
-        start_ts = int(start_time.timestamp() * 1000)
-        end_ts = int((start_time + timedelta(days=1)).timestamp() * 1000)  # Descargamos 1 día por iteración
+    while start_time > earliest_time:
+        start_ts = int((start_time - timedelta(days=7)).timestamp() * 1000)  # Descargamos 7 días por iteración
+        end_ts = int(start_time.timestamp() * 1000)
 
         params = {
             "category": "linear",
@@ -49,10 +49,12 @@ def get_ohlcv(symbol: str, interval: str, days: int = 300):
                     chunk = data['result']['list']
                     if not chunk:
                         print("🚨 No se recibieron más datos, deteniendo descarga.")
+                        start_time = earliest_time  # Salir del bucle
                         break
 
                     all_data.extend(chunk)
-                    print(f"✅ Descargadas {len(chunk)} velas ({datetime.fromtimestamp(int(chunk[0][0])/1000,UTC)} - {datetime.fromtimestamp(int(chunk[-1][0])/1000,UTC)})")
+                    earliest_candle = datetime.fromtimestamp(int(chunk[-1][0])/1000, UTC)
+                    print(f"✅ Descargadas {len(chunk)} velas ({earliest_candle} - {datetime.fromtimestamp(int(chunk[0][0])/1000, UTC)})")
                     time.sleep(0.2)  # Evitar rate limits
                     break
                 else:
@@ -61,15 +63,15 @@ def get_ohlcv(symbol: str, interval: str, days: int = 300):
                 print(f"⚠️ Error en la solicitud (intento {attempt + 1}): {e}")
                 time.sleep(1)
 
-        start_time += timedelta(days=1)  # Avanzamos 1 día en cada iteración
+        start_time -= timedelta(days=7)  # Retrocedemos 7 días
 
     if not all_data:
         print("❌ No se obtuvieron datos.")
         return None
 
-    # crear dataframe
+    # Crear DataFrame
     df = pd.DataFrame(all_data, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', '_'])
-    df = df.drop(columns=['_'])  # Eliminar columna innecesaria
+    df = df.drop(columns=['_'])
     df[['Open', 'High', 'Low', 'Close', 'Volume']] = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
     df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
     df = df.sort_values(by='timestamp', ascending=True)
@@ -78,7 +80,7 @@ def get_ohlcv(symbol: str, interval: str, days: int = 300):
     os.makedirs("data", exist_ok=True)
 
     # Cargar datos previos si existen
-    file_path = f'data/{symbol}_{interval}.csv'
+    file_path = f'data/{symbol}_{interval}_full.csv'
     if os.path.exists(file_path):
         df_prev = pd.read_csv(file_path)
         df_prev['timestamp'] = pd.to_datetime(df_prev['timestamp'])
@@ -91,14 +93,9 @@ def get_ohlcv(symbol: str, interval: str, days: int = 300):
     return df
 
 if __name__ == "__main__":
-    symbol = "BTCUSDT"
+    symbol = "XRPUSDT"
     
-    # Obtener datos de 1H (máximos y mínimos del día anterior)
-    df_1h = get_ohlcv(symbol, "60", days=300)
+    # Obtener datos de 1H
+    df_1h = get_ohlcv(symbol, "D")
     if df_1h is not None:
         print("📊 Datos de 1 hora guardados")
-
-    # Obtener datos de 5M para rupturas
-    df_5m = get_ohlcv(symbol, "15", days=300)
-    if df_5m is not None:
-        print("📊 Datos de 15 minutos guardados")
